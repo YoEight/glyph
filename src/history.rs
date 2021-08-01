@@ -43,13 +43,13 @@ impl History {
 
     pub fn next_entry(&mut self) -> Option<String> {
         if self.entries.is_empty() || self.offset == self.entries.len() {
-            return Some("".to_string());
+            return None;
         }
 
         self.offset += 1;
 
         if self.offset == self.entries.len() {
-            return Some("".to_string());
+            return None;
         }
 
         Some(

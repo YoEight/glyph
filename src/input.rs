@@ -5,6 +5,7 @@ use termion::event::Key;
 use termion::input::{Keys, TermRead};
 use termion::raw::IntoRawMode;
 
+#[derive(Debug)]
 pub enum Input {
     String(String),
     Exit,
@@ -19,6 +20,7 @@ pub struct Inputs {
     start_pos: u16,
     keys: Keys<Stdin>,
     history: History,
+    inflight_buffer: Option<String>,
 }
 
 impl Inputs {
@@ -32,6 +34,7 @@ impl Inputs {
             offset: 0,
             start_pos: 3,
             history: History::new(),
+            inflight_buffer: None,
         }
     }
 }
@@ -62,7 +65,7 @@ impl Iterator for Inputs {
 
         let (_, y) = input_try!(stdout.cursor_pos());
 
-        input_try!(write!(stdout, "\n{}λ ", termion::cursor::Goto(1, y + 1)));
+        input_try!(write!(stdout, "{}λ ", termion::cursor::Goto(1, y + 1)));
         input_try!(stdout.flush());
 
         while let Some(c) = input_try!(self.keys.next().transpose()) {
@@ -86,6 +89,12 @@ impl Iterator for Inputs {
                         self.buffer,
                         termion::cursor::Goto(self.start_pos + self.offset, y)
                     ));
+
+                    if self.buffer.is_empty() {
+                        self.inflight_buffer = None;
+                    } else {
+                        self.inflight_buffer = Some(self.buffer.clone());
+                    }
                 }
 
                 Key::Left if self.offset > 0 => {
@@ -127,7 +136,12 @@ impl Iterator for Inputs {
                 }
 
                 Key::Down => {
-                    if let Some(entry) = self.history.next_entry() {
+                    if let Some(entry) = self
+                        .history
+                        .next_entry()
+                        .or_else(|| self.inflight_buffer.clone())
+                        .or_else(|| Some("".to_string()))
+                    {
                         self.offset = entry.len() as u16;
                         self.buffer = entry;
                         input_try!(write!(
@@ -165,8 +179,18 @@ impl Iterator for Inputs {
 
                         let name = params.remove(0);
 
+                        input_try!(write!(stdout, "\n{}", termion::cursor::Goto(1, y + 1)));
+                        input_try!(stdout.flush());
+
+                        self.inflight_buffer = None;
+
                         return Some(Input::Command { name, params });
                     }
+
+                    input_try!(write!(stdout, "\n{}", termion::cursor::Goto(1, y + 1)));
+                    input_try!(stdout.flush());
+
+                    self.inflight_buffer = None;
 
                     return Some(Input::String(line.to_string()));
                 }
@@ -194,6 +218,8 @@ impl Iterator for Inputs {
                             self.buffer
                         ));
                     }
+
+                    self.inflight_buffer = Some(self.buffer.clone());
                 }
                 _ => {}
             }
