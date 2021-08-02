@@ -5,6 +5,28 @@ use termion::event::Key;
 use termion::input::{Keys, TermRead};
 use termion::raw::IntoRawMode;
 
+#[derive(Debug, Clone)]
+pub struct Options {
+    prompt: String,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            prompt: "λ".to_string(),
+        }
+    }
+}
+
+impl Options {
+    pub fn prompt(self, prompt: impl AsRef<str>) -> Self {
+        Self {
+            prompt: prompt.as_ref().to_string(),
+            ..self
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Input {
     String(String),
@@ -14,6 +36,7 @@ pub enum Input {
 }
 
 pub struct Inputs {
+    options: Options,
     terminated: bool,
     buffer: String,
     offset: u16,
@@ -24,15 +47,21 @@ pub struct Inputs {
 }
 
 impl Inputs {
-    pub fn new() -> Self {
+    pub fn default() -> Self {
+        Self::new(Options::default())
+    }
+
+    pub fn new(options: Options) -> Self {
         let keys = io::stdin().keys();
+        let start_pos = options.prompt.chars().count() as u16 + 2;
 
         Inputs {
+            options,
             keys,
             terminated: false,
             buffer: String::new(),
             offset: 0,
-            start_pos: 3,
+            start_pos,
             history: History::new(),
             inflight_buffer: None,
         }
@@ -65,7 +94,12 @@ impl Iterator for Inputs {
 
         let (_, y) = input_try!(stdout.cursor_pos());
 
-        input_try!(write!(stdout, "{}λ ", termion::cursor::Goto(1, y + 1)));
+        input_try!(write!(
+            stdout,
+            "{}{} ",
+            termion::cursor::Goto(1, y + 1),
+            self.options.prompt
+        ));
         input_try!(stdout.flush());
 
         while let Some(c) = input_try!(self.keys.next().transpose()) {
@@ -83,9 +117,10 @@ impl Iterator for Inputs {
                     self.buffer.remove(self.offset as usize);
                     input_try!(write!(
                         stdout,
-                        "{}{}λ {}{}",
+                        "{}{}{} {}{}",
                         termion::cursor::Goto(1, y),
                         termion::clear::CurrentLine,
+                        self.options.prompt,
                         self.buffer,
                         termion::cursor::Goto(self.start_pos + self.offset, y)
                     ));
@@ -113,9 +148,10 @@ impl Iterator for Inputs {
                     self.offset += 1;
                     input_try!(write!(
                         stdout,
-                        "{}{}λ {}{}",
+                        "{}{}{} {}{}",
                         termion::cursor::Goto(1, y),
                         termion::clear::CurrentLine,
+                        self.options.prompt,
                         self.buffer,
                         termion::cursor::Goto(self.start_pos + self.offset, y)
                     ));
@@ -127,9 +163,10 @@ impl Iterator for Inputs {
                         self.buffer = entry;
                         input_try!(write!(
                             stdout,
-                            "{}{}λ {}",
+                            "{}{}{} {}",
                             termion::cursor::Goto(1, y),
                             termion::clear::CurrentLine,
+                            self.options.prompt,
                             self.buffer
                         ));
                     }
@@ -146,9 +183,10 @@ impl Iterator for Inputs {
                         self.buffer = entry;
                         input_try!(write!(
                             stdout,
-                            "{}{}λ {}",
+                            "{}{}{} {}",
                             termion::cursor::Goto(1, y),
                             termion::clear::CurrentLine,
+                            self.options.prompt,
                             self.buffer
                         ));
                     }
@@ -159,7 +197,12 @@ impl Iterator for Inputs {
                     let line = line.as_str().trim();
 
                     if line.is_empty() {
-                        input_try!(write!(stdout, "\n{}λ ", termion::cursor::Goto(1, y + 1)));
+                        input_try!(write!(
+                            stdout,
+                            "\n{}{} ",
+                            termion::cursor::Goto(1, y + 1),
+                            self.options.prompt
+                        ));
                         input_try!(stdout.flush());
                         continue;
                     }
@@ -202,9 +245,10 @@ impl Iterator for Inputs {
                         self.buffer.insert((self.offset as usize) - 1, c);
                         input_try!(write!(
                             stdout,
-                            "{}{}λ {}{}",
+                            "{}{}{} {}{}",
                             termion::cursor::Goto(1, y),
                             termion::clear::CurrentLine,
+                            self.options.prompt,
                             self.buffer,
                             termion::cursor::Goto(self.start_pos + self.offset, y)
                         ));
@@ -212,9 +256,10 @@ impl Iterator for Inputs {
                         self.buffer.push(c);
                         input_try!(write!(
                             stdout,
-                            "{}{}λ {}",
+                            "{}{}{} {}",
                             termion::cursor::Goto(1, y),
                             termion::clear::CurrentLine,
+                            self.options.prompt,
                             self.buffer
                         ));
                     }

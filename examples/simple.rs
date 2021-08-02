@@ -1,6 +1,7 @@
-use glyph::{Input, Inputs};
+use glyph::{Input, Inputs, Options};
 fn main() {
-    for input in Inputs::new() {
+    let options = Options::default();
+    for input in Inputs::new(options) {
         if let Input::Exit = input {
             break;
         }
