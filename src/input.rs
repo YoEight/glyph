@@ -136,9 +136,10 @@ impl Iterator for Inputs {
                     self.offset -= 1;
                     input_try!(write!(
                         stdout,
-                        "{}{}λ {}{}",
+                        "{}{}{} {}{}",
                         termion::cursor::Goto(1, y),
                         termion::clear::CurrentLine,
+                        self.options.prompt,
                         self.buffer,
                         termion::cursor::Goto(self.start_pos + self.offset, y)
                     ));
