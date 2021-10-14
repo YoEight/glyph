@@ -1,23 +1,44 @@
+use crate::persistence::{FileBackend, Noop, Persistence};
+use std::io;
+use std::path::Path;
+
 #[derive(Debug)]
-pub struct History {
+pub struct History<A> {
     entries: Vec<String>,
     offset: usize,
+    persistence: A,
 }
 
-impl History {
-    pub fn new() -> Self {
-        History {
-            entries: Vec::new(),
-            offset: 0,
-        }
+pub fn in_memory_history() -> io::Result<History<Noop>> {
+    History::new(Noop)
+}
+
+pub fn file_backed_history(path: impl AsRef<Path>) -> io::Result<History<FileBackend>> {
+    let backend = FileBackend::new(path)?;
+    History::new(backend)
+}
+
+impl<A: Persistence> History<A> {
+    pub fn new(mut persistence: A) -> io::Result<Self> {
+        let entries = persistence.load()?;
+        let offset = entries.len();
+
+        Ok(History {
+            entries,
+            offset,
+            persistence,
+        })
     }
 
-    pub fn push(&mut self, entry: String) {
+    pub fn push(&mut self, entry: String) -> io::Result<()> {
         if self.entries.last() != Some(&entry.clone()) {
             self.entries.push(entry);
+            self.persistence.persist(&self.entries)?;
         }
 
         self.offset = self.entries.len();
+
+        Ok(())
     }
 
     pub fn prev_entry(&mut self) -> Option<String> {
@@ -58,5 +79,9 @@ impl History {
                 .cloned()
                 .expect("My maintainer miscalculated the history offset for next_entry"),
         )
+    }
+
+    pub fn entries(&self) -> &Vec<String> {
+        &self.entries
     }
 }
