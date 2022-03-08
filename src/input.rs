@@ -1,11 +1,13 @@
 use crate::history::{file_backed_history, in_memory_history, History};
 use crate::persistence::{FileBackend, Noop, Persistence};
-use std::io::{self, Stdin, Write};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::{
+    cursor::{self, MoveTo, MoveToNextLine},
+    event, queue,
+    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
+};
+use std::io::{self, Write};
 use std::path::Path;
-use termion::cursor::DetectCursorPos;
-use termion::event::Key;
-use termion::input::{Keys, TermRead};
-use termion::raw::IntoRawMode;
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -42,7 +44,6 @@ pub struct Inputs<A> {
     buffer: String,
     offset: u16,
     start_pos: u16,
-    keys: Keys<Stdin>,
     history: History<A>,
     inflight_buffer: Option<String>,
 }
@@ -63,12 +64,10 @@ where
     A: Persistence,
 {
     pub fn new(options: Options, history: History<A>) -> io::Result<Inputs<A>> {
-        let keys = io::stdin().keys();
         let start_pos = options.prompt.chars().count() as u16 + 2;
 
         Ok(Inputs {
             options,
-            keys,
             terminated: false,
             buffer: String::new(),
             offset: 0,
@@ -83,190 +82,153 @@ where
             return Ok(None);
         }
 
-        let mut stdout = io::stdout().into_raw_mode()?;
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
 
-        let (_, y) = stdout.cursor_pos()?;
+        let (_, y) = cursor::position()?;
 
-        write!(
-            stdout,
-            "{}{} ",
-            termion::cursor::Goto(1, y + 1),
-            self.options.prompt
-        )?;
+        queue!(stdout, MoveTo(0, y + 1))?;
+        write!(stdout, "{} ", self.options.prompt)?;
 
         stdout.flush()?;
 
-        while let Some(c) = self.keys.next().transpose()? {
-            let (_, y) = stdout.cursor_pos()?;
+        loop {
+            let c = event::read()?;
+            let (_, y) = cursor::position()?;
 
-            match c {
-                Key::Ctrl('c') => {
-                    println!();
-                    self.terminated = true;
-                    return Ok(Some(Input::Exit));
-                }
-
-                Key::Backspace if self.offset > 0 => {
-                    self.offset -= 1;
-                    self.buffer.remove(self.offset as usize);
-                    write!(
-                        stdout,
-                        "{}{}{} {}{}",
-                        termion::cursor::Goto(1, y),
-                        termion::clear::CurrentLine,
-                        self.options.prompt,
-                        self.buffer,
-                        termion::cursor::Goto(self.start_pos + self.offset, y)
-                    )?;
-
-                    if self.buffer.is_empty() {
-                        self.inflight_buffer = None;
-                    } else {
-                        self.inflight_buffer = Some(self.buffer.clone());
-                    }
-                }
-
-                Key::Left if self.offset > 0 => {
-                    self.offset -= 1;
-                    write!(
-                        stdout,
-                        "{}{}{} {}{}",
-                        termion::cursor::Goto(1, y),
-                        termion::clear::CurrentLine,
-                        self.options.prompt,
-                        self.buffer,
-                        termion::cursor::Goto(self.start_pos + self.offset, y)
-                    )?;
-                }
-
-                Key::Right if self.offset < self.buffer.len() as u16 => {
-                    self.offset += 1;
-                    write!(
-                        stdout,
-                        "{}{}{} {}{}",
-                        termion::cursor::Goto(1, y),
-                        termion::clear::CurrentLine,
-                        self.options.prompt,
-                        self.buffer,
-                        termion::cursor::Goto(self.start_pos + self.offset, y)
-                    )?;
-                }
-
-                Key::Up => {
-                    if let Some(entry) = self.history.prev_entry() {
-                        self.offset = entry.len() as u16;
-                        self.buffer = entry;
-                        write!(
-                            stdout,
-                            "{}{}{} {}",
-                            termion::cursor::Goto(1, y),
-                            termion::clear::CurrentLine,
-                            self.options.prompt,
-                            self.buffer
-                        )?;
-                    }
-                }
-
-                Key::Down => {
-                    if let Some(entry) = self
-                        .history
-                        .next_entry()
-                        .or_else(|| self.inflight_buffer.clone())
-                        .or_else(|| Some("".to_string()))
-                    {
-                        self.offset = entry.len() as u16;
-                        self.buffer = entry;
-                        write!(
-                            stdout,
-                            "{}{}{} {}",
-                            termion::cursor::Goto(1, y),
-                            termion::clear::CurrentLine,
-                            self.options.prompt,
-                            self.buffer
-                        )?;
-                    }
-                }
-
-                Key::Char('\n') => {
-                    let line = std::mem::replace(&mut self.buffer, String::new());
-                    let line = line.as_str().trim();
-
-                    if line.is_empty() {
-                        write!(
-                            stdout,
-                            "\n{}{} ",
-                            termion::cursor::Goto(1, y + 1),
-                            self.options.prompt
-                        )?;
+            if let Event::Key(KeyEvent { code, modifiers }) = c {
+                match code {
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        write!(stdout, "\n")?;
                         stdout.flush()?;
-                        continue;
+                        self.terminated = true;
+                        disable_raw_mode()?;
+                        return Ok(Some(Input::Exit));
                     }
 
-                    self.history.push(line.to_string())?;
-                    self.offset = 0;
+                    KeyCode::Backspace if self.offset > 0 => {
+                        self.offset -= 1;
+                        self.buffer.remove(self.offset as usize);
+                        queue!(stdout, MoveTo(0, y), Clear(ClearType::CurrentLine))?;
+                        write!(stdout, "{} {}", self.options.prompt, self.buffer)?;
+                        queue!(stdout, MoveTo(self.start_pos + self.offset - 1, y))?;
 
-                    if let Some(cmd) = line.strip_prefix(":") {
-                        if cmd.is_empty() {
+                        if self.buffer.is_empty() {
+                            self.inflight_buffer = None;
+                        } else {
+                            self.inflight_buffer = Some(self.buffer.clone());
+                        }
+                    }
+
+                    KeyCode::Left if self.offset > 0 => {
+                        self.offset -= 1;
+                        queue!(stdout, MoveTo(0, y), Clear(ClearType::CurrentLine))?;
+                        write!(stdout, "{} {}", self.options.prompt, self.buffer)?;
+                        queue!(stdout, MoveTo(self.start_pos + self.offset - 1, y))?;
+                    }
+
+                    KeyCode::Right if self.offset < self.buffer.len() as u16 => {
+                        self.offset += 1;
+                        queue!(stdout, MoveTo(0, y), Clear(ClearType::CurrentLine))?;
+                        write!(stdout, "{} {}", self.options.prompt, self.buffer)?;
+                        queue!(stdout, MoveTo(self.start_pos + self.offset - 1, y))?;
+                    }
+
+                    KeyCode::Up => {
+                        if let Some(entry) = self.history.prev_entry() {
+                            self.offset = entry.len() as u16;
+                            self.buffer = entry;
+
+                            queue!(stdout, MoveTo(0, y), Clear(ClearType::CurrentLine))?;
+                            write!(stdout, "{} {}", self.options.prompt, self.buffer,)?;
+                            queue!(stdout, MoveTo(self.start_pos + self.offset - 1, y))?;
+                        }
+                    }
+
+                    KeyCode::Down => {
+                        if let Some(entry) = self
+                            .history
+                            .next_entry()
+                            .or_else(|| self.inflight_buffer.clone())
+                            .or_else(|| Some("".to_string()))
+                        {
+                            self.offset = entry.len() as u16;
+                            self.buffer = entry;
+
+                            queue!(stdout, MoveTo(0, y), Clear(ClearType::CurrentLine))?;
+                            write!(stdout, "{} {}", self.options.prompt, self.buffer)?;
+                            queue!(stdout, MoveTo(self.start_pos + self.offset - 1, y))?;
+                        }
+                    }
+
+                    KeyCode::Enter => {
+                        let line = std::mem::replace(&mut self.buffer, String::new());
+                        let line = line.as_str().trim();
+
+                        if line.is_empty() {
+                            queue!(stdout, MoveToNextLine(1))?;
+                            write!(stdout, "{} ", self.options.prompt)?;
+
+                            stdout.flush()?;
                             continue;
                         }
 
-                        let mut params = cmd
-                            .split_whitespace()
-                            .map(|s| s.to_string())
-                            .collect::<Vec<String>>();
+                        self.history.push(line.to_string())?;
+                        self.offset = 0;
 
-                        let name = params.remove(0);
+                        if let Some(cmd) = line.strip_prefix(":") {
+                            if cmd.is_empty() {
+                                continue;
+                            }
 
-                        write!(stdout, "\n{}", termion::cursor::Goto(1, y + 1))?;
+                            let mut params = cmd
+                                .split_whitespace()
+                                .map(|s| s.to_string())
+                                .collect::<Vec<String>>();
+
+                            let name = params.remove(0);
+
+                            queue!(stdout, MoveToNextLine(1))?;
+                            stdout.flush()?;
+
+                            self.inflight_buffer = None;
+
+                            disable_raw_mode()?;
+                            return Ok(Some(Input::Command { name, params }));
+                        }
+
+                        queue!(stdout, MoveToNextLine(1))?;
                         stdout.flush()?;
 
                         self.inflight_buffer = None;
 
-                        return Ok(Some(Input::Command { name, params }));
+                        disable_raw_mode()?;
+                        return Ok(Some(Input::String(line.to_string())));
                     }
 
-                    write!(stdout, "\n{}", termion::cursor::Goto(1, y + 1))?;
-                    stdout.flush()?;
+                    KeyCode::Char(c) => {
+                        self.offset += 1;
 
-                    self.inflight_buffer = None;
+                        if self.offset < (self.buffer.len() + 1) as u16 {
+                            self.buffer.insert((self.offset as usize) - 1, c);
+                            queue!(stdout, MoveTo(0, y), Clear(ClearType::CurrentLine))?;
+                            write!(stdout, "{} {}", self.options.prompt, self.buffer)?;
+                            queue!(stdout, MoveTo(self.start_pos + self.offset - 1, y))?;
+                        } else {
+                            self.buffer.push(c);
 
-                    return Ok(Some(Input::String(line.to_string())));
-                }
+                            queue!(stdout, MoveTo(0, y), Clear(ClearType::CurrentLine))?;
+                            write!(stdout, "{} {}", self.options.prompt, self.buffer,)?;
+                            queue!(stdout, MoveTo(self.start_pos + self.offset - 1, y),)?;
+                        }
 
-                Key::Char(c) => {
-                    self.offset += 1;
-
-                    if self.offset < (self.buffer.len() + 1) as u16 {
-                        self.buffer.insert((self.offset as usize) - 1, c);
-                        write!(
-                            stdout,
-                            "{}{}{} {}{}",
-                            termion::cursor::Goto(1, y),
-                            termion::clear::CurrentLine,
-                            self.options.prompt,
-                            self.buffer,
-                            termion::cursor::Goto(self.start_pos + self.offset, y)
-                        )?;
-                    } else {
-                        self.buffer.push(c);
-                        write!(
-                            stdout,
-                            "{}{}{} {}",
-                            termion::cursor::Goto(1, y),
-                            termion::clear::CurrentLine,
-                            self.options.prompt,
-                            self.buffer
-                        )?;
+                        self.inflight_buffer = Some(self.buffer.clone());
                     }
-
-                    self.inflight_buffer = Some(self.buffer.clone());
+                    _ => {}
                 }
-                _ => {}
             }
+
             stdout.flush()?;
         }
-
-        self.terminated = true;
-        Ok(Some(Input::Exit))
     }
 }
