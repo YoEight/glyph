@@ -194,6 +194,8 @@ where
                             self.inflight_buffer = None;
 
                             disable_raw_mode()?;
+                            println!();
+
                             return Ok(Some(Input::Command { name, params }));
                         }
 
@@ -203,6 +205,8 @@ where
                         self.inflight_buffer = None;
 
                         disable_raw_mode()?;
+                        println!();
+
                         return Ok(Some(Input::String(line.to_string())));
                     }
 
