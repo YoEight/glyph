@@ -12,12 +12,20 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct Options {
     prompt: String,
+    header: String,
+    author: String,
+    version: String,
+    date: String,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
             prompt: "λ".to_string(),
+            header: Default::default(),
+            author: Default::default(),
+            version: Default::default(),
+            date: Default::default(),
         }
     }
 }
@@ -26,6 +34,34 @@ impl Options {
     pub fn prompt(self, prompt: impl AsRef<str>) -> Self {
         Self {
             prompt: prompt.as_ref().to_string(),
+            ..self
+        }
+    }
+
+    pub fn header(self, header: impl AsRef<str>) -> Self {
+        Self {
+            header: header.as_ref().to_string(),
+            ..self
+        }
+    }
+
+    pub fn author(self, author: impl AsRef<str>) -> Self {
+        Self {
+            author: author.as_ref().to_string(),
+            ..self
+        }
+    }
+
+    pub fn version(self, version: impl AsRef<str>) -> Self {
+        Self {
+            version: version.as_ref().to_string(),
+            ..self
+        }
+    }
+
+    pub fn date(self, date: impl AsRef<str>) -> Self {
+        Self {
+            date: date.as_ref().to_string(),
             ..self
         }
     }
@@ -66,6 +102,23 @@ where
     pub fn new(options: Options, history: History<A>) -> io::Result<Inputs<A>> {
         let start_pos = options.prompt.chars().count() as u16 + 2;
 
+        if !options.header.is_empty() {
+            println!("{}", options.header);
+        }
+
+        if !options.author.is_empty() {
+            println!("Author: {}", options.author);
+        }
+
+        if !options.version.is_empty() {
+            println!("Version: {}", options.version);
+        }
+
+        if !options.date.is_empty() {
+            println!("Date: {}", options.date);
+            println!();
+        }
+
         Ok(Inputs {
             options,
             terminated: false,
@@ -98,9 +151,19 @@ where
 
             if let Event::Key(KeyEvent { code, modifiers }) = c {
                 match code {
+                    KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.offset = 0;
+                        queue!(stdout, MoveTo(2, y))?;
+                    }
+
+                    KeyCode::Char('e') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.offset = self.buffer.len() as u16;
+                        queue!(stdout, MoveTo(2 + self.offset, y))?;
+                    }
+
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        write!(stdout, "\n")?;
-                        stdout.flush()?;
+                        queue!(stdout, MoveTo(0, y))?;
+                        println!();
                         self.terminated = true;
                         disable_raw_mode()?;
                         return Ok(Some(Input::Exit));
