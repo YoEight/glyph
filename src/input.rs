@@ -101,21 +101,29 @@ where
 {
     pub fn new(options: Options, history: History<A>) -> io::Result<Inputs<A>> {
         let start_pos = options.prompt.chars().count() as u16 + 2;
+        let mut padding = false;
 
         if !options.header.is_empty() {
             println!("{}", options.header);
+            padding = true;
         }
 
         if !options.author.is_empty() {
             println!("Author: {}", options.author);
+            padding = true;
         }
 
         if !options.version.is_empty() {
             println!("Version: {}", options.version);
+            padding = true;
         }
 
         if !options.date.is_empty() {
             println!("Date: {}", options.date);
+            padding = true;
+        }
+
+        if padding {
             println!();
         }
 
