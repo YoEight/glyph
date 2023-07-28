@@ -1,11 +1,16 @@
+pub mod params;
+
 use crate::history::{file_backed_history, in_memory_history, History};
 use crate::persistence::{FileBackend, Noop, Persistence};
+use crate::Params;
+use clap::Parser;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::{
     cursor::{self, MoveTo, MoveToNextLine},
     event, queue,
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
+use std::fmt::Display;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -68,10 +73,10 @@ impl Options {
 }
 
 #[derive(Debug)]
-pub enum Input {
+pub enum Input<C> {
     String(String),
     Exit,
-    Command { name: String, params: Vec<String> },
+    Command(C),
 }
 
 pub struct Inputs<A> {
@@ -138,7 +143,24 @@ where
         })
     }
 
-    pub fn next_input(&mut self) -> io::Result<Option<Input>> {
+    pub fn next_input(&mut self) -> io::Result<Option<Input<Params>>> {
+        self.next_input_with(|args| Ok::<_, String>(Params::new(args)))
+    }
+
+    pub fn next_input_with_parser<P: Parser>(&mut self) -> io::Result<Option<Input<P>>> {
+        self.next_input_with(|mut args| {
+            let mut updated = vec![":".to_string()];
+
+            updated.extend(args);
+            P::try_parse_from(updated)
+        })
+    }
+
+    pub fn next_input_with<F, E, C>(&mut self, parser: F) -> io::Result<Option<Input<C>>>
+    where
+        E: Display,
+        F: Fn(Vec<String>) -> Result<C, E>,
+    {
         if self.terminated {
             return Ok(None);
         }
@@ -252,22 +274,36 @@ where
                                 continue;
                             }
 
-                            let mut params = cmd
+                            let params = cmd
                                 .split_whitespace()
-                                .map(|s| s.to_string())
-                                .collect::<Vec<String>>();
+                                .map(|c| c.to_string())
+                                .collect::<Vec<_>>();
 
-                            let name = params.remove(0);
+                            match parser(params) {
+                                Err(e) => {
+                                    stdout.flush()?;
+                                    disable_raw_mode()?;
+                                    println!();
+                                    println!("{}", e);
+                                    enable_raw_mode()?;
+                                    queue!(stdout, MoveTo(0, y + 1))?;
+                                    write!(stdout, "{} ", self.options.prompt)?;
+                                    stdout.flush()?;
 
-                            queue!(stdout, MoveToNextLine(1))?;
-                            stdout.flush()?;
+                                    continue;
+                                }
 
-                            self.inflight_buffer = None;
+                                Ok(c) => {
+                                    queue!(stdout, MoveToNextLine(1))?;
+                                    stdout.flush()?;
 
-                            disable_raw_mode()?;
-                            println!();
+                                    self.inflight_buffer = None;
 
-                            return Ok(Some(Input::Command { name, params }));
+                                    disable_raw_mode()?;
+                                    println!();
+                                    return Ok(Some(Input::Command(c)));
+                                }
+                            }
                         }
 
                         queue!(stdout, MoveToNextLine(1))?;
