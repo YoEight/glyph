@@ -148,7 +148,7 @@ where
     }
 
     pub fn next_input_with_parser<P: Parser>(&mut self) -> io::Result<Option<Input<P>>> {
-        self.next_input_with(|mut args| {
+        self.next_input_with(|args| {
             let mut updated = vec![":".to_string()];
 
             updated.extend(args);
