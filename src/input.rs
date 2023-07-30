@@ -90,6 +90,17 @@ impl<A> Input<A> {
             Input::Command(a) => Input::Command(fun(a)),
         }
     }
+
+    pub fn flat_map<F, B>(self, fun: F) -> Input<B>
+    where
+        F: FnOnce(A) -> Input<B>,
+    {
+        match self {
+            Input::String(s) => Input::String(s),
+            Input::Exit => Input::Exit,
+            Input::Command(a) => fun(a),
+        }
+    }
 }
 
 pub struct Inputs<A> {
