@@ -79,6 +79,19 @@ pub enum Input<C> {
     Command(C),
 }
 
+impl<A> Input<A> {
+    pub fn map<F, B>(self, fun: F) -> Input<B>
+    where
+        F: FnOnce(A) -> B,
+    {
+        match self {
+            Input::String(s) => Input::String(s),
+            Input::Exit => Input::Exit,
+            Input::Command(a) => Input::Command(fun(a)),
+        }
+    }
+}
+
 pub struct Inputs<A> {
     options: Options,
     terminated: bool,
