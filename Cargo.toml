@@ -18,3 +18,6 @@ name = "simple"
 
 [[example]]
 name = "clap"
+
+[[example]]
+name = "stateful_prompt"

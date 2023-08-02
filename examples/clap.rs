@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use glyph::{in_memory_inputs, Input, Options};
 
 #[derive(Parser, Debug)]
+#[command(name = "clap")]
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Cli {
@@ -19,7 +20,8 @@ fn main() -> std::io::Result<()> {
     let options = Options::default()
         .author("Yo Eight")
         .version("1.2.3")
-        .date("July, 28th 2023");
+        .date("July, 28th 2023")
+        .command_prompt("run");
 
     let mut inputs = in_memory_inputs(options)?;
 
