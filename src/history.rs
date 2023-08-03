@@ -31,7 +31,7 @@ impl<A: Persistence> History<A> {
     }
 
     pub fn push(&mut self, entry: String) -> io::Result<()> {
-        if self.entries.last() != Some(&entry.clone()) {
+        if self.entries.last() != Some(&entry) {
             self.entries.push(entry);
             self.persistence.persist(&self.entries)?;
         }
