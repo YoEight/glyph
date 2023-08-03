@@ -337,7 +337,7 @@ where
                     }
 
                     KeyCode::Enter => {
-                        let line = std::mem::replace(&mut self.buffer, String::new());
+                        let line = std::mem::take(&mut self.buffer);
                         let line = line.as_str().trim();
 
                         if line.is_empty() {

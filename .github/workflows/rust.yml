@@ -15,7 +15,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-2019, macos-11]
         rust: [stable, beta, nightly]
-        
+        exclude:
+          - os: windows-2019
+            rust: beta
+          - os: windows-2019
+            rust: nightly
+          - os: macos-11
+            rust: beta
+          - os: macos-11
+            rust: nightly
+
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -25,14 +34,14 @@ jobs:
       run: |
         rustup update
         rustup default ${{ matrix.rust }}
-        
+
     - name: Build
       run: cargo check --verbose --all-targets
       continue-on-error: ${{ matrix.rust == 'nightly' }}
-      
+
     - name: Run tests
       run: cargo test --verbose
-      
+
   linting:
     name: Linting
     needs: build
@@ -40,7 +49,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Install
       run: |
         rustup update stable

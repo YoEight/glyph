@@ -6,7 +6,7 @@ use std::path::Path;
 
 pub trait Persistence {
     fn load(&mut self) -> io::Result<Vec<String>>;
-    fn persist(&mut self, history: &Vec<String>) -> io::Result<()>;
+    fn persist(&mut self, history: &[String]) -> io::Result<()>;
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
@@ -17,7 +17,7 @@ impl Persistence for Noop {
         Ok(Vec::new())
     }
 
-    fn persist(&mut self, _: &Vec<String>) -> io::Result<()> {
+    fn persist(&mut self, _: &[String]) -> io::Result<()> {
         Ok(())
     }
 }
@@ -58,7 +58,7 @@ impl Persistence for FileBackend {
         Ok(history)
     }
 
-    fn persist(&mut self, history: &Vec<String>) -> io::Result<()> {
+    fn persist(&mut self, history: &[String]) -> io::Result<()> {
         self.file.seek(SeekFrom::Start(0))?;
 
         for line in history.iter() {
