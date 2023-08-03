@@ -1,0 +1,54 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-2019, macos-11]
+        rust: [stable, beta, nightly]
+        
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install
+      run: |
+        rustup update
+        rustup default ${{ matrix.rust }}
+        
+    - name: Build
+      run: cargo check --verbose --all-targets
+      continue-on-error: ${{ matrix.rust == 'nightly' }}
+      
+    - name: Run tests
+      run: cargo test --verbose
+      
+  linting:
+    name: Linting
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install
+      run: |
+        rustup update stable
+        rustup component add clippy
+        rustup component add rustfmt
+
+    - name: Linting
+      run: cargo clippy --all-features -- -D warnings
+
+    - name: Formatting
+      run: cargo fmt -- --check
